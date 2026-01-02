@@ -2,8 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
@@ -34,7 +33,6 @@ interface NocoDBResponse {
 }
 
 serve(async (req: Request) => {
-  // CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -42,17 +40,16 @@ serve(async (req: Request) => {
   try {
     const apiToken = Deno.env.get("NOCODB_API_TOKEN");
     if (!apiToken) {
-      throw new Error("NOCODB_API_TOKEN not set in Supabase secrets");
+      throw new Error("NOCODB_API_TOKEN missing in Supabase secrets");
     }
 
     let allRecords: NocoDBRecord[] = [];
-    let page = 1;
+    let offset = 0;
 
     while (true) {
-      // ✅ Correct NocoDB pagination params
       const url =
         `${NOCODB_BASE_URL}/api/v2/tables/${TABLE_ID}/records` +
-        `?page=${page}&limit=${PAGE_SIZE}`;
+        `?limit=${PAGE_SIZE}&offset=${offset}`;
 
       const res = await fetch(url, {
         headers: {
@@ -69,15 +66,17 @@ serve(async (req: Request) => {
       const data: NocoDBResponse = await res.json();
       const rows = data.list ?? [];
 
+      if (rows.length === 0) break;
+
       allRecords.push(...rows);
 
-      // ✅ stop when last page reached
+      // Stop when last page reached
       if (rows.length < PAGE_SIZE) break;
 
-      page++;
+      offset += PAGE_SIZE;
     }
 
-    // Normalize for frontend analytics
+    // Normalize for analytics
     const leads = allRecords.map((r) => ({
       id: r.lead_id ?? r.Id.toString(),
       name: r.name ?? "Unknown",
@@ -101,10 +100,7 @@ serve(async (req: Request) => {
         leads,
       }),
       {
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-        },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
   } catch (e) {
@@ -115,10 +111,7 @@ serve(async (req: Request) => {
       }),
       {
         status: 500,
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-        },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
   }
