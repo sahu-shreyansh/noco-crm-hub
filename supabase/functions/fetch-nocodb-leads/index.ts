@@ -47,6 +47,9 @@ interface NocoDBResponse {
   };
 }
 
+// Simple delay helper
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -67,6 +70,11 @@ serve(async (req: Request) => {
     console.log(`[Fetch-Leads] START. View: ${VIEW_ID}, PageSize: ${PAGE_SIZE}`);
 
     while (keepFetching) {
+      // Add delay between requests to avoid rate limiting (except first request)
+      if (page > 1) {
+        await delay(300); // 300ms delay between requests
+      }
+
       const url = new URL(`${NOCODB_BASE_URL}/api/v2/tables/${TABLE_ID}/records`);
       url.searchParams.set("viewId", VIEW_ID);
       url.searchParams.set("limit", PAGE_SIZE.toString());
