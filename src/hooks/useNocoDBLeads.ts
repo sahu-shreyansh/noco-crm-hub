@@ -202,9 +202,9 @@ export function useNocoDBLeads() {
   return useQuery({
     queryKey: ['nocodb-leads'],
     queryFn: fetchLeadsFromNocoDB,
-    staleTime: 1000 * 30, // 30 seconds
-    refetchInterval: 1000 * 30, // Auto-refresh every 30 seconds
-    refetchIntervalInBackground: false, // Only poll when tab is active
-    retry: 2,
+    staleTime: 1000 * 60 * 2, // 2 minutes - avoid rate limiting
+    refetchInterval: 1000 * 60 * 2, // Auto-refresh every 2 minutes
+    refetchIntervalInBackground: false,
+    retry: 1,
   });
 }
