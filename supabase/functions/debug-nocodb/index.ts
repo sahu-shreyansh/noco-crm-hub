@@ -2,14 +2,31 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const NOCODB_BASE_URL = "https://app.nocodb.com";
-const TABLE_ID = "mqr3ezrainoyq9p";
-const VIEW_ID = "vwx7stc4s2q57zoa";
+const TABLE_ID = "m7lq2fxiwp128u3";
+const VIEW_ID = "vw72ijpqe2aptx4g";
 
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers":
         "authorization, x-client-info, apikey, content-type",
 };
+
+interface FetchResult {
+    status: number;
+    url: string;
+    duration: string;
+    listLength: number | undefined;
+    pageInfo: unknown;
+    firstRecId: unknown;
+    error?: unknown;
+}
+
+interface Results {
+    test1_view_default: FetchResult | null;
+    test2_view_limit100: FetchResult | null;
+    test3_no_view_limit10: FetchResult | null;
+    env: { tableId: string; viewId: string };
+}
 
 serve(async (req: Request) => {
     if (req.method === "OPTIONS") {
@@ -22,7 +39,7 @@ serve(async (req: Request) => {
             return new Response("Missing NOCODB_API_TOKEN", { status: 500 });
         }
 
-        const results = {
+        const results: Results = {
             test1_view_default: null,
             test2_view_limit100: null,
             test3_no_view_limit10: null,
@@ -33,7 +50,7 @@ serve(async (req: Request) => {
         };
 
         // Helper fetcher
-        const fetchNoco = async (params: URLSearchParams) => {
+        const fetchNoco = async (params: URLSearchParams): Promise<FetchResult> => {
             const url = new URL(`${NOCODB_BASE_URL}/api/v2/tables/${TABLE_ID}/records`);
             params.forEach((v, k) => url.searchParams.append(k, v));
 
@@ -46,7 +63,7 @@ serve(async (req: Request) => {
             const json = await res.json();
             return {
                 status: res.status,
-                url: url.toString().replace(TABLE_ID, '***'), // redact
+                url: url.toString().replace(TABLE_ID, '***'),
                 duration: `${(end - start).toFixed(2)}ms`,
                 listLength: json.list?.length,
                 pageInfo: json.pageInfo,
@@ -68,7 +85,7 @@ serve(async (req: Request) => {
 
         // TEST 3: Raw Table (No view)
         const p3 = new URLSearchParams();
-        p3.set("limit", "20"); // Check if table has more than 14 records total
+        p3.set("limit", "20");
         results.test3_no_view_limit10 = await fetchNoco(p3);
 
         return new Response(JSON.stringify(results, null, 2), {
@@ -76,7 +93,8 @@ serve(async (req: Request) => {
         });
 
     } catch (e) {
-        return new Response(JSON.stringify({ error: e.message }), {
+        const errorMessage = e instanceof Error ? e.message : "Unknown error";
+        return new Response(JSON.stringify({ error: errorMessage }), {
             status: 500,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
