@@ -1,4 +1,3 @@
-// @supabase/functions/no-verify-jwt
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
@@ -13,22 +12,29 @@ const TABLE_ID = "m7lq2fxiwp128u3";
 const VIEW_ID = "vw72ijpqe2aptx4g";
 const PAGE_SIZE = 100;
 
+// Matches actual NocoDB field names
 interface NocoDBRecord {
   Id: number;
-  lead_id?: string;
-  name?: string;
+  nc_order?: number;
+  timestamp?: string;
+  fullName?: string;
+  jobTitle?: string;
   company?: string;
-  email?: string;
+  phone1?: string;
+  phone2?: string;
+  email1?: string;
+  "email verification"?: string | null;
+  email2?: string;
+  website?: string;
+  address?: string;
+  notes?: string;
+  confidence?: string;
+  rawText?: string;
+  fileName?: string;
+  fileId?: string;
+  fileLink?: string;
   status?: string;
-  reply_received?: boolean;
-  reply_type?: string;
-  sdr_name?: string;
-  first_outreach_date?: string;
-  last_followup_date?: string;
-  next_followup_date?: string;
-  follow_up_count?: number;
-  days_to_reply?: number;
-  email_opened?: boolean;
+  emailBody?: string;
 }
 
 interface NocoDBResponse {
@@ -62,16 +68,11 @@ serve(async (req: Request) => {
 
     while (keepFetching) {
       const url = new URL(`${NOCODB_BASE_URL}/api/v2/tables/${TABLE_ID}/records`);
-
       url.searchParams.set("viewId", VIEW_ID);
       url.searchParams.set("limit", PAGE_SIZE.toString());
       url.searchParams.set("offset", offset.toString());
 
-      // Some versions of NocoDB might respect 'p' or 'pageSize' or 'page'
-      // Adding them defensively; NocoDB usually ignores extras but it helps if version mismatch
-      // url.searchParams.set("page", page.toString()); // Intentionally omitting to rely on offset+limit
-
-      console.log(`[Fetch-Leads] Fetching URL: ${url.toString().replace(TABLE_ID, '***')}`);
+      console.log(`[Fetch-Leads] Fetching page ${page} (offset ${offset})...`);
 
       const res = await fetch(url.toString(), {
         headers: {
@@ -90,37 +91,19 @@ serve(async (req: Request) => {
       const rows = data.list || [];
       const info = data.pageInfo || {};
 
-      console.log(`[Fetch-Leads] Page ${page} (Offset ${offset}): fetched ${rows.length} rows.`);
-      if (info.totalRows !== undefined) {
-        console.log(`[Fetch-Leads] Meta: totalRows=${info.totalRows}, isLastPage=${info.isLastPage}`);
-      }
+      console.log(`[Fetch-Leads] Page ${page}: fetched ${rows.length} rows. Total so far: ${allRecords.length + rows.length}`);
 
       if (rows.length > 0) {
         allRecords.push(...rows);
       }
 
-      // Pagination Logic
-      // 1. If we got 0 rows, we are definitely done
-      if (rows.length === 0) {
+      // Pagination logic
+      if (rows.length === 0 || info.isLastPage === true || rows.length < PAGE_SIZE) {
         keepFetching = false;
         break;
       }
 
-      // 2. If 'isLastPage' is explicitly true, trust it
-      if (info.isLastPage === true) {
-        console.log("[Fetch-Leads] isLastPage=true detected. Stopping.");
-        keepFetching = false;
-        break;
-      }
-
-      // 3. Fallback: if rows < limit, assume end
-      if (rows.length < PAGE_SIZE) {
-        console.log(`[Fetch-Leads] Rows (${rows.length}) < Limit (${PAGE_SIZE}). Assuming end.`);
-        keepFetching = false;
-        break;
-      }
-
-      // 4. Safety: Max records
+      // Safety limit
       if (allRecords.length >= 10000) {
         console.warn("[Fetch-Leads] Safety limit 10k reached.");
         keepFetching = false;
@@ -133,33 +116,66 @@ serve(async (req: Request) => {
 
     console.log(`[Fetch-Leads] DONE. Total records: ${allRecords.length}`);
 
-    // Normalization
+    // Map NocoDB status values to our Lead status types
+    const mapStatus = (status?: string): string => {
+      if (!status) return "new";
+      const s = status.toLowerCase();
+      if (s === "sent" || s === "contacted") return "contacted";
+      if (s === "replied" || s === "response") return "replied";
+      if (s === "positive" || s === "interested") return "positive";
+      if (s === "meeting" || s === "scheduled") return "meeting";
+      if (s === "closed" || s === "won" || s === "converted") return "closed";
+      if (s === "negative" || s === "rejected" || s === "not interested") return "replied";
+      return "new";
+    };
+
+    // Transform records to Lead format for frontend
     const leads = allRecords.map((r) => ({
-      id: r.lead_id || r.Id?.toString() || crypto.randomUUID(),
-      name: r.name || "Unknown",
+      id: r.Id?.toString() || crypto.randomUUID(),
+      name: r.fullName || "Unknown",
       company: r.company || "Unknown",
-      email: r.email || "",
-      status: r.status || "new",
-      replyReceived: r.reply_received ?? false,
-      replyType: r.reply_type || null,
-      sdrName: r.sdr_name || "Unassigned",
-      firstOutreachDate: r.first_outreach_date || null,
-      lastFollowupDate: r.last_followup_date || null,
-      nextFollowupDate: r.next_followup_date || null,
-      followUpCount: r.follow_up_count || 0,
-      daysToReply: r.days_to_reply || null,
-      emailOpened: r.email_opened ?? false,
+      email: r.email1 || r.email2 || "",
+      jobTitle: r.jobTitle || "",
+      phone: r.phone1 || r.phone2 || "",
+      website: r.website || "",
+      address: r.address || "",
+      notes: r.notes || "",
+      
+      // Status mapping
+      status: mapStatus(r.status),
+      rawStatus: r.status || "new",
+      
+      // Outreach tracking - if status is "SENT" or has emailBody, outreach was sent
+      outreach_sent: !!r.status && r.status.toLowerCase() !== "new",
+      
+      // Reply tracking - infer from status
+      reply_received: ["replied", "positive", "meeting", "closed", "response", "interested"].includes((r.status || "").toLowerCase()),
+      reply_type: null as string | null, // NocoDB doesn't have this field, will be null
+      
+      // SDR/Timestamps
+      sdr_name: "Team", // NocoDB doesn't have SDR field
+      first_outreach_date: r.timestamp || null,
+      last_followup_date: null as string | null,
+      next_followup_date: null as string | null,
+      followup_count: r.status?.toLowerCase() === "sent" ? 1 : 0,
+      days_to_reply: null as number | null,
+      email_opened: false,
+      
+      // Extra fields from NocoDB
+      confidence: r.confidence ? parseFloat(r.confidence) : null,
+      fileLink: r.fileLink || null,
+      emailBody: r.emailBody || null,
     }));
 
     return new Response(
       JSON.stringify({
         total: leads.length,
         leads,
-        // Returning debug info in response for user visibility
         debug: {
           fetched: leads.length,
           provider: "NocoDB",
-          viewId: VIEW_ID
+          viewId: VIEW_ID,
+          sampleStatuses: [...new Set(allRecords.map(r => r.status).filter(Boolean))].slice(0, 10)
         }
       }),
       {
@@ -182,5 +198,3 @@ serve(async (req: Request) => {
     );
   }
 });
-
-
