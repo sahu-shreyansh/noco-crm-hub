@@ -1,1 +1,7 @@
 project_id = "wriyxmmoiclmhvxqxxjo"
+
+[functions.fetch-nocodb-leads]
+verify_jwt = false
+
+[functions.debug-nocodb]
+verify_jwt = false

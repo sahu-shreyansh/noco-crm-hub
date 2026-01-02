@@ -17,7 +17,8 @@ interface FetchResult {
     duration: string;
     listLength: number | undefined;
     pageInfo: unknown;
-    firstRecId: unknown;
+    firstRecord: unknown;
+    allFieldNames: string[];
     error?: unknown;
 }
 
@@ -61,13 +62,15 @@ serve(async (req: Request) => {
             const end = performance.now();
 
             const json = await res.json();
+            const firstRec = json.list?.[0];
             return {
                 status: res.status,
                 url: url.toString().replace(TABLE_ID, '***'),
                 duration: `${(end - start).toFixed(2)}ms`,
                 listLength: json.list?.length,
                 pageInfo: json.pageInfo,
-                firstRecId: json.list?.[0]?.Id,
+                firstRecord: firstRec,
+                allFieldNames: firstRec ? Object.keys(firstRec) : [],
                 error: !res.ok ? json : undefined
             };
         };

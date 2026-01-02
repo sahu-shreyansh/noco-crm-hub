@@ -6,23 +6,36 @@ interface NocoDBLead {
   id: string;
   name: string;
   company: string;
-  email?: string;
+  email: string;
+  jobTitle?: string;
+  phone?: string;
+  website?: string;
+  address?: string;
+  notes?: string;
   status: string;
-  replyReceived: boolean;
-  replyType: string | null;
-  sdrName: string;
-  firstOutreachDate: string | null;
-  lastFollowupDate: string | null;
-  nextFollowupDate: string | null;
-  followUpCount: number;
-  daysToReply: number | null;
-  emailOpened: boolean;
+  rawStatus?: string;
+  outreach_sent: boolean;
+  reply_received: boolean;
+  reply_type: string | null;
+  sdr_name: string;
+  first_outreach_date: string | null;
+  last_followup_date: string | null;
+  next_followup_date: string | null;
+  followup_count: number;
+  days_to_reply: number | null;
+  email_opened: boolean;
+  confidence?: number | null;
+  fileLink?: string | null;
+  emailBody?: string | null;
 }
 
 interface NocoDBResponse {
   leads: NocoDBLead[];
   total: number;
   error?: string;
+  debug?: {
+    sampleStatuses?: string[];
+  };
 }
 
 function transformToLead(record: NocoDBLead): Lead {
@@ -33,17 +46,17 @@ function transformToLead(record: NocoDBLead): Lead {
     company: record.company,
     status: (record.status as Lead['status']) || 'new',
     source: 'NocoDB',
-    createdAt: record.firstOutreachDate || new Date().toISOString(),
-    lastContactedAt: record.lastFollowupDate || undefined,
-    outreach_sent: !!record.firstOutreachDate,
-    reply_received: record.replyReceived,
-    reply_type: (record.replyType as Lead['reply_type']) || null,
-    sdr_name: record.sdrName,
-    first_outreach_date: record.firstOutreachDate || new Date().toISOString(),
-    last_followup_date: record.lastFollowupDate || undefined,
-    next_followup_date: record.nextFollowupDate || undefined,
-    followup_count: record.followUpCount,
-    reply_time_hours: record.daysToReply ? record.daysToReply * 24 : undefined,
+    createdAt: record.first_outreach_date || new Date().toISOString(),
+    lastContactedAt: record.last_followup_date || undefined,
+    outreach_sent: record.outreach_sent,
+    reply_received: record.reply_received,
+    reply_type: (record.reply_type as Lead['reply_type']) || null,
+    sdr_name: record.sdr_name || 'Team',
+    first_outreach_date: record.first_outreach_date || new Date().toISOString(),
+    last_followup_date: record.last_followup_date || undefined,
+    next_followup_date: record.next_followup_date || undefined,
+    followup_count: record.followup_count || 0,
+    reply_time_hours: record.days_to_reply ? record.days_to_reply * 24 : undefined,
   };
 }
 
@@ -108,29 +121,36 @@ function generateTimelineEvents(leads: Lead[]): TimelineEvent[] {
 }
 
 function generateRepliesOverTime(leads: Lead[]): RepliesOverTime[] {
-  const repliesWithDates = leads.filter(l => l.reply_received && l.last_followup_date);
+  // Group leads by their outreach date
   const dateMap = new Map<string, { replies: number; positive: number; negative: number }>();
 
-  repliesWithDates.forEach((lead) => {
-    const date = lead.last_followup_date!.split('T')[0];
+  leads.forEach((lead) => {
+    if (!lead.first_outreach_date) return;
+    const date = lead.first_outreach_date.split('T')[0];
     const existing = dateMap.get(date) || { replies: 0, positive: 0, negative: 0 };
-    existing.replies++;
-    if (lead.reply_type === 'positive') existing.positive++;
-    if (lead.reply_type === 'negative') existing.negative++;
+    
+    if (lead.reply_received) {
+      existing.replies++;
+      if (lead.reply_type === 'positive') existing.positive++;
+      if (lead.reply_type === 'negative') existing.negative++;
+    }
+    
     dateMap.set(date, existing);
   });
 
   return Array.from(dateMap.entries())
     .map(([date, data]) => ({ date, ...data }))
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .slice(-30); // Last 30 days
 }
 
 function generateSDRPerformance(leads: Lead[]): SDRPerformance[] {
   const sdrMap = new Map<string, SDRPerformance>();
 
   leads.forEach((lead) => {
-    const existing = sdrMap.get(lead.sdr_name) || {
-      sdr_name: lead.sdr_name,
+    const sdrName = lead.sdr_name || 'Team';
+    const existing = sdrMap.get(sdrName) || {
+      sdr_name: sdrName,
       outreach_count: 0,
       reply_count: 0,
       positive_count: 0,
@@ -144,7 +164,7 @@ function generateSDRPerformance(leads: Lead[]): SDRPerformance[] {
     if (lead.reply_type === 'neutral') existing.neutral_count++;
     if (lead.reply_type === 'negative') existing.negative_count++;
 
-    sdrMap.set(lead.sdr_name, existing);
+    sdrMap.set(sdrName, existing);
   });
 
   return Array.from(sdrMap.values());
@@ -156,11 +176,7 @@ async function fetchLeadsFromNocoDB(): Promise<{
   repliesOverTime: RepliesOverTime[];
   sdrPerformance: SDRPerformance[];
 }> {
-  const { data, error } = await supabase.functions.invoke<NocoDBResponse>('fetch-nocodb-leads', {
-    headers: {
-      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`
-    }
-  });
+  const { data, error } = await supabase.functions.invoke<NocoDBResponse>('fetch-nocodb-leads');
 
   if (error) {
     console.error('Error fetching from NocoDB:', error);
@@ -172,7 +188,7 @@ async function fetchLeadsFromNocoDB(): Promise<{
     throw new Error(data.error);
   }
 
-  console.log(`Fetched ${data?.total || 0} leads from NocoDB`);
+  console.log(`Fetched ${data?.total || 0} leads from NocoDB`, data?.debug);
 
   const leads = (data?.leads || []).map(transformToLead);
   const timelineEvents = generateTimelineEvents(leads);
