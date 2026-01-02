@@ -1,11 +1,14 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { CampaignCard } from "@/components/campaigns/CampaignCard";
-import { mockCampaigns } from "@/data/mockData";
 import { Button } from "@/components/ui/button";
 import { Plus, Play, Pause, CheckCircle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Campaign } from "@/types/crm";
 
 const Outreach = () => {
+  // Campaign data fetching is not yet implemented in backend
+  const mockCampaigns: Campaign[] = [];
+
   const activeCampaigns = mockCampaigns.filter(c => c.status === "active");
   const pausedCampaigns = mockCampaigns.filter(c => c.status === "paused");
   const completedCampaigns = mockCampaigns.filter(c => c.status === "completed");
@@ -64,8 +67,8 @@ const Outreach = () => {
           <TabsContent value="all" className="space-y-0">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {mockCampaigns.map((campaign, index) => (
-                <div 
-                  key={campaign.id} 
+                <div
+                  key={campaign.id}
                   className="animate-fade-in"
                   style={{ animationDelay: `${index * 100}ms` }}
                 >

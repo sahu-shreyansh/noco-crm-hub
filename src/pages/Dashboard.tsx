@@ -9,15 +9,7 @@ import { RepliesAnalytics } from "@/components/analytics/RepliesAnalytics";
 import { FollowUpAnalytics } from "@/components/analytics/FollowUpAnalytics";
 import { LeadsTable } from "@/components/leads/LeadsTable";
 import { useNocoDBLeads } from "@/hooks/useNocoDBLeads";
-import {
-  mockMetrics,
-  mockLeads,
-  mockSDRPerformance,
-  mockRepliesOverTime,
-  mockTimelineEvents,
-  replyQualityData,
-  funnelData,
-} from "@/data/mockData";
+
 import {
   Users,
   Send,
@@ -37,11 +29,11 @@ const Dashboard = () => {
   const { toast } = useToast();
   const { data: nocoData, isLoading, error, refetch, isFetching } = useNocoDBLeads();
 
-  // Use NocoDB data if available, otherwise fall back to mock data
-  const leads = nocoData?.leads ?? mockLeads;
-  const timelineEvents = nocoData?.timelineEvents ?? mockTimelineEvents;
-  const repliesOverTime = nocoData?.repliesOverTime ?? mockRepliesOverTime;
-  const sdrPerformance = nocoData?.sdrPerformance ?? mockSDRPerformance;
+  // Use NocoDB data if available, otherwise default to empty
+  const leads = nocoData?.leads ?? [];
+  const timelineEvents = nocoData?.timelineEvents ?? [];
+  const repliesOverTime = nocoData?.repliesOverTime ?? [];
+  const sdrPerformance = nocoData?.sdrPerformance ?? [];
 
   // Calculate metrics from leads
   const metrics = {
@@ -66,6 +58,21 @@ const Dashboard = () => {
       closed: leads.filter(l => l.status === 'closed').length,
     },
   };
+
+  const replyQualityData = [
+    { name: "Positive", value: leads.filter(l => l.reply_type === 'positive').length, color: "hsl(142, 71%, 45%)" },
+    { name: "Neutral", value: leads.filter(l => l.reply_type === 'neutral').length, color: "hsl(38, 92%, 50%)" },
+    { name: "Negative", value: leads.filter(l => l.reply_type === 'negative').length, color: "hsl(0, 84%, 60%)" },
+    { name: "Auto-reply", value: leads.filter(l => !['positive', 'neutral', 'negative'].includes(l.reply_type || '') && l.reply_received).length, color: "hsl(220, 9%, 46%)" },
+  ];
+
+  const funnelData = [
+    { stage: "Leads", count: metrics.totalLeads, percentage: 100 },
+    { stage: "Outreach", count: metrics.emailsSent, percentage: metrics.totalLeads > 0 ? (metrics.emailsSent / metrics.totalLeads) * 100 : 0 },
+    { stage: "Replies", count: metrics.replies, percentage: metrics.totalLeads > 0 ? (metrics.replies / metrics.totalLeads) * 100 : 0 },
+    { stage: "Positive", count: leads.filter(l => l.reply_type === 'positive').length, percentage: metrics.totalLeads > 0 ? (leads.filter(l => l.reply_type === 'positive').length / metrics.totalLeads) * 100 : 0 },
+    { stage: "Closed", count: metrics.leadsByStatus.closed, percentage: metrics.totalLeads > 0 ? (metrics.leadsByStatus.closed / metrics.totalLeads) * 100 : 0 },
+  ];
 
   const handleRefresh = async () => {
     await refetch();
@@ -106,6 +113,16 @@ const Dashboard = () => {
             </Button>
           </div>
         </motion.div>
+
+        {error && (
+          <div className="mb-8 p-4 bg-destructive/10 border border-destructive/20 text-destructive rounded-lg flex items-center">
+            <span className="font-semibold mr-2">Error loading data:</span>
+            {error.message || "Unknown error occurred"}
+            <Button variant="outline" size="sm" className="ml-4 border-destructive/20 hover:bg-destructive/20" onClick={() => refetch()}>
+              Retry
+            </Button>
+          </div>
+        )}
 
         {/* Filters */}
         <AnalyticsFilters />

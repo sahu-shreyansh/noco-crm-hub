@@ -1,31 +1,33 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { LeadsTable } from "@/components/leads/LeadsTable";
-import { mockLeads } from "@/data/mockData";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { 
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, Filter, Download } from "lucide-react";
+import { Search, Plus, Filter, Download, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { Lead, LeadStatus } from "@/types/crm";
+import { useNocoDBLeads } from "@/hooks/useNocoDBLeads";
 
 const Leads = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const { data: nocoData, isLoading, error } = useNocoDBLeads();
 
-  const filteredLeads = mockLeads.filter((lead) => {
-    const matchesSearch = 
+  const leads = nocoData?.leads ?? [];
+
+  const filteredLeads = leads.filter((lead) => {
+    const matchesSearch =
       lead.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       lead.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
       lead.company.toLowerCase().includes(searchQuery.toLowerCase());
-    
+
     const matchesStatus = statusFilter === "all" || lead.status === statusFilter;
-    
+
     return matchesSearch && matchesStatus;
   });
 
@@ -86,9 +88,16 @@ const Leads = () => {
           <div className="text-sm">
             <span className="text-muted-foreground">Showing: </span>
             <span className="font-medium text-foreground">{filteredLeads.length}</span>
-            <span className="text-muted-foreground"> of {mockLeads.length} leads</span>
+            <span className="text-muted-foreground"> of {leads.length} leads</span>
           </div>
         </div>
+
+        {/* Error State */}
+        {error && (
+          <div className="mb-6 p-4 bg-destructive/10 border border-destructive/20 text-destructive rounded-lg">
+            <span className="font-semibold">Error:</span> {error.message}
+          </div>
+        )}
 
         {/* Table */}
         <LeadsTable leads={filteredLeads} />

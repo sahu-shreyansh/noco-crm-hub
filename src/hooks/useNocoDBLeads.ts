@@ -50,7 +50,7 @@ function transformToLead(record: NocoDBLead): Lead {
 function generateTimelineEvents(leads: Lead[]): TimelineEvent[] {
   return leads.slice(0, 20).map((lead) => {
     const events: TimelineEvent['events'] = [];
-    
+
     if (lead.first_outreach_date) {
       events.push({
         type: 'outreach',
@@ -58,7 +58,7 @@ function generateTimelineEvents(leads: Lead[]): TimelineEvent[] {
         label: 'Initial Outreach',
       });
     }
-    
+
     if (lead.followup_count >= 1 && lead.first_outreach_date) {
       const followupDate = new Date(lead.first_outreach_date);
       followupDate.setDate(followupDate.getDate() + 3);
@@ -68,7 +68,7 @@ function generateTimelineEvents(leads: Lead[]): TimelineEvent[] {
         label: 'Follow-up 1',
       });
     }
-    
+
     if (lead.followup_count >= 2 && lead.first_outreach_date) {
       const followup2Date = new Date(lead.first_outreach_date);
       followup2Date.setDate(followup2Date.getDate() + 7);
@@ -78,7 +78,7 @@ function generateTimelineEvents(leads: Lead[]): TimelineEvent[] {
         label: 'Follow-up 2',
       });
     }
-    
+
     if (lead.reply_received && lead.last_followup_date) {
       events.push({
         type: 'reply',
@@ -86,7 +86,7 @@ function generateTimelineEvents(leads: Lead[]): TimelineEvent[] {
         label: 'Reply Received',
       });
     }
-    
+
     if (lead.status === 'meeting' || lead.status === 'closed') {
       const meetingDate = new Date(lead.last_followup_date || lead.first_outreach_date);
       meetingDate.setDate(meetingDate.getDate() + 5);
@@ -96,7 +96,7 @@ function generateTimelineEvents(leads: Lead[]): TimelineEvent[] {
         label: 'Meeting Scheduled',
       });
     }
-    
+
     return {
       lead_id: lead.id,
       lead_name: lead.name,
@@ -110,7 +110,7 @@ function generateTimelineEvents(leads: Lead[]): TimelineEvent[] {
 function generateRepliesOverTime(leads: Lead[]): RepliesOverTime[] {
   const repliesWithDates = leads.filter(l => l.reply_received && l.last_followup_date);
   const dateMap = new Map<string, { replies: number; positive: number; negative: number }>();
-  
+
   repliesWithDates.forEach((lead) => {
     const date = lead.last_followup_date!.split('T')[0];
     const existing = dateMap.get(date) || { replies: 0, positive: 0, negative: 0 };
@@ -119,7 +119,7 @@ function generateRepliesOverTime(leads: Lead[]): RepliesOverTime[] {
     if (lead.reply_type === 'negative') existing.negative++;
     dateMap.set(date, existing);
   });
-  
+
   return Array.from(dateMap.entries())
     .map(([date, data]) => ({ date, ...data }))
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -127,7 +127,7 @@ function generateRepliesOverTime(leads: Lead[]): RepliesOverTime[] {
 
 function generateSDRPerformance(leads: Lead[]): SDRPerformance[] {
   const sdrMap = new Map<string, SDRPerformance>();
-  
+
   leads.forEach((lead) => {
     const existing = sdrMap.get(lead.sdr_name) || {
       sdr_name: lead.sdr_name,
@@ -137,16 +137,16 @@ function generateSDRPerformance(leads: Lead[]): SDRPerformance[] {
       neutral_count: 0,
       negative_count: 0,
     };
-    
+
     if (lead.outreach_sent) existing.outreach_count++;
     if (lead.reply_received) existing.reply_count++;
     if (lead.reply_type === 'positive') existing.positive_count++;
     if (lead.reply_type === 'neutral') existing.neutral_count++;
     if (lead.reply_type === 'negative') existing.negative_count++;
-    
+
     sdrMap.set(lead.sdr_name, existing);
   });
-  
+
   return Array.from(sdrMap.values());
 }
 
@@ -156,8 +156,12 @@ async function fetchLeadsFromNocoDB(): Promise<{
   repliesOverTime: RepliesOverTime[];
   sdrPerformance: SDRPerformance[];
 }> {
-  const { data, error } = await supabase.functions.invoke<NocoDBResponse>('fetch-nocodb-leads');
-  
+  const { data, error } = await supabase.functions.invoke<NocoDBResponse>('fetch-nocodb-leads', {
+    headers: {
+      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`
+    }
+  });
+
   if (error) {
     console.error('Error fetching from NocoDB:', error);
     throw new Error(error.message);
@@ -169,12 +173,12 @@ async function fetchLeadsFromNocoDB(): Promise<{
   }
 
   console.log(`Fetched ${data?.total || 0} leads from NocoDB`);
-  
+
   const leads = (data?.leads || []).map(transformToLead);
   const timelineEvents = generateTimelineEvents(leads);
   const repliesOverTime = generateRepliesOverTime(leads);
   const sdrPerformance = generateSDRPerformance(leads);
-  
+
   return { leads, timelineEvents, repliesOverTime, sdrPerformance };
 }
 
